@@ -26,13 +26,15 @@ pub struct App<'a> {
     layout: Layout,
     current: CurrentView,
     open: Vec<std::path::PathBuf>,
-    main: tui::widgets::Tabs<'a>,
+    pub tabs: tui::widgets::Tabs<'a>,
     store: Store,
 }
 
 pub enum CurrentView {
     Library,
     File(u8),
+    Settings,
+    Browse,
 }
 
 impl<'a> App<'a> {
@@ -45,8 +47,17 @@ impl<'a> App<'a> {
                 .bg(Color::Black)
                 .add_modifier(Modifier::BOLD)
         };
+        let tabs = Tabs::new(vec![Spans(vec![lib])])
+            .style(Style::default().fg(Color::White).bg(Color::Black))
+            .select(0)
+            .highlight_style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .bg(Color::DarkGray)
+            )
+            .block(Block::default().borders(Borders::ALL).title("Tabs"));
         Self {
-            main: Tabs::new(vec![Spans(vec![lib])]),
+            tabs,
             layout: Layout::default(),
             open: Vec::new(),
             current: CurrentView::Library,
@@ -111,21 +122,15 @@ impl<'a> App<'a> {
     }
 
     pub fn draw(&mut self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<(), crate::error::EError> {
+        let chunks = Self::chunks(f.size());
+        let tabs = self.tabs.clone();
+        f.render_widget(tabs, chunks[0]);
         let block = Block::default()
             .style(Style::default()
                 .bg(Color::Black)
                 .fg(Color::LightGreen));
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(5)
-            .constraints([
-                Constraint::Percentage(10),
-                Constraint::Percentage(8),
-                Constraint::Percentage(10),
-                Constraint::Percentage(8),
-            ]);
-        let block = |title: &str| {
+        let block = |title: String| {
             Block::default().borders(Borders::ALL)
                 .style(Style::default().bg(Color::Black).fg(Color::White))
                 .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
@@ -143,9 +148,9 @@ impl<'a> App<'a> {
                             .alignment(Alignment::Left)
                             .scroll((0, 0))
                             .wrap(Wrap { trim: false });
+                        f.render_widget(p.clone(), chunks[1]);
                         return p;
                     })
-                    .inspect(|p| {})
                     .collect::<Vec<Paragraph>>();
                 let spans = file.lines().into_iter().map(|ln| {
                     Spans::from(Span::styled(ln, Style::default()
@@ -153,14 +158,35 @@ impl<'a> App<'a> {
                 }).collect::<Vec<Spans>>();
             }
             CurrentView::Library => {
-                for item in self.store.history {
+                for item in self.store.clone().history {
                     let file = fs::read_to_string(item.as_path())?;
+                    let itm = item.clone().to_owned();
+                    let block = block(itm.to_str().unwrap_or(file.lines().next().unwrap_or_default()).to_string());
+                    f.render_widget(block, chunks[1]);
                 }
                 let spans = Spans::from(Span::styled("Library",
                     Style::default().fg(Color::White).bg(Color::Black)));
-            }
+            },
+            CurrentView::Settings => {},
+            CurrentView::Browse => {}
         };
+        let status = Block::default().borders(Borders::ALL);
+        f.render_widget(status, chunks[2]);
         Ok(())
+    }
+
+    pub fn chunks(area: Rect) -> Vec<Rect> {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(5)
+            .constraints([
+                Constraint::Percentage(10),
+                Constraint::Percentage(8),
+                Constraint::Percentage(10),
+                Constraint::Percentage(8),
+            ])
+            .split(area);
+        chunks
     }
 
     pub fn move_to(&mut self, dir: Directions) -> () {
