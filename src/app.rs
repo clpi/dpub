@@ -6,21 +6,33 @@ use crossterm::{
 };
 use tui::{
     backend::CrosstermBackend,
+    layout::{Layout, Rect, Direction, Constraint, Alignment,},
     terminal::{Terminal, TerminalOptions, Frame, Viewport},
     text::{Text, Span, Spans, StyledGrapheme},
-    buffer::{Buffer, Cell},
-    widgets::{Tabs, Row, Paragraph, Widget},
+    buffer::{Buffer, Cell,},
+    widgets::{Tabs, Row, Paragraph, Widget, Block, Borders, Wrap},
     style::{Style, Color, Modifier,},
 };
 use std::{
     io::{self, Read, Write, Stdout},
     borrow::Cow,
+    path::{PathBuf, Path},
     fs, thread
 };
 use chrono::{DateTime, Local, Duration};
+use crate::store::Store;
 
 pub struct App<'a> {
+    layout: Layout,
+    current: CurrentView,
+    open: Vec<std::path::PathBuf>,
     main: tui::widgets::Tabs<'a>,
+    store: Store,
+}
+
+pub enum CurrentView {
+    Library,
+    File(u8),
 }
 
 impl<'a> App<'a> {
@@ -35,6 +47,10 @@ impl<'a> App<'a> {
         };
         Self {
             main: Tabs::new(vec![Spans(vec![lib])]),
+            layout: Layout::default(),
+            open: Vec::new(),
+            current: CurrentView::Library,
+            store: Store::default(),
         }
     }
 
@@ -95,6 +111,55 @@ impl<'a> App<'a> {
     }
 
     pub fn draw(&mut self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<(), crate::error::EError> {
+        let block = Block::default()
+            .style(Style::default()
+                .bg(Color::Black)
+                .fg(Color::LightGreen));
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(5)
+            .constraints([
+                Constraint::Percentage(10),
+                Constraint::Percentage(8),
+                Constraint::Percentage(10),
+                Constraint::Percentage(8),
+            ]);
+        let block = |title: &str| {
+            Block::default().borders(Borders::ALL)
+                .style(Style::default().bg(Color::Black).fg(Color::White))
+                .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
+        };
+        let content = match self.current {
+            CurrentView::File(idx) => {
+                let path: &Path = self.open[idx as usize].as_path();
+                let file = fs::read_to_string(path)?;
+                let pars = file.split_terminator("\n\n")
+                    .map(|s| {
+                        let p = Paragraph::new(s)
+                            .style(Style::default())
+                            .block(Block::default()
+                                .borders(Borders::NONE))
+                            .alignment(Alignment::Left)
+                            .scroll((0, 0))
+                            .wrap(Wrap { trim: false });
+                        return p;
+                    })
+                    .inspect(|p| {})
+                    .collect::<Vec<Paragraph>>();
+                let spans = file.lines().into_iter().map(|ln| {
+                    Spans::from(Span::styled(ln, Style::default()
+                        .fg(Color::White).bg(Color::Black)))
+                }).collect::<Vec<Spans>>();
+            }
+            CurrentView::Library => {
+                for item in self.store.history {
+                    let file = fs::read_to_string(item.as_path())?;
+                }
+                let spans = Spans::from(Span::styled("Library",
+                    Style::default().fg(Color::White).bg(Color::Black)));
+            }
+        };
         Ok(())
     }
 

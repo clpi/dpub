@@ -1,6 +1,7 @@
 pub mod app;
 pub mod cmd;
 pub mod error;
+pub mod store;
 
 use std::io;
 use error::EError;
