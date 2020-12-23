@@ -1,7 +1,7 @@
 use crossterm::{
     execute, write_ansi_code, queue,
     terminal::{self, EnableLineWrap, EnterAlternateScreen, LeaveAlternateScreen, ClearType, SetTitle },
-    event::{self, Event as CEvent, KeyEvent, KeyCode},
+    event::{self, Event as CEvent, KeyEvent, KeyCode, KeyModifiers},
     cursor::{self, Hide, Show},
 };
 use tui::{
@@ -99,33 +99,57 @@ impl<'a> App<'a> {
             match rx.recv().unwrap() {
                 Msg::Key(ev) => {
                     use KeyCode::*;
-                    match ev.code {
-                        Char('q') => {
-                            terminal::disable_raw_mode()?;
-                            execute!(
-                                term.backend_mut(),
-                                LeaveAlternateScreen,
-                            )?;
-                            term.show_cursor()?;
-                            break;
-                        },
-                        Char('j') | Down => {
-                            self.move_to(Directions::Down);
-                        },
-                        Char('k') | Up  => {
-                            self.move_to(Directions::Up);
-                        },
-                        Char('h') | Left  => {
-                            self.move_to(Directions::Left);
-                        },
-                        Char('l') | Right  => {
-                            self.move_to(Directions::Right);
-                        },
-                        Char('n') | PageDown  => {self.next_tab();}
-                        Char('p') | PageUp  => {self.prev_tab();}
-                        Char(c) => {self.char(c);  },
-                        _ => {}
-                    };
+                    if ev.modifiers.eq(&KeyModifiers::NONE) {
+                        match ev.code {
+                            Char('q') => {
+                                Self::quit(term);
+                                break;
+                            },
+                            Char('j') | Down => {
+                                self.move_to(Directions::Down);
+                            },
+                            Char('k') | Up  => {
+                                self.move_to(Directions::Up);
+                            },
+                            Char('h') | Left  => {
+                                self.move_to(Directions::Left);
+                            },
+                            Char('l') | Right  => {
+                                self.move_to(Directions::Right);
+                            },
+                            Tab => { self.next_tab(); }
+                            Home => { self.library(); }
+                            Char('s') => { self.settings(); }
+                            Char('n') | PageDown  => {self.next_tab();}
+                            Char('p') | PageUp  => {self.prev_tab();}
+                            Char(c) => {self.char(c);  },
+                            _ => {}
+                        };
+                    } else if ev.modifiers.contains(KeyModifiers::CONTROL) {
+                        match ev.code {
+                            Char('c') | Down => {
+                                Self::quit(term);
+                                break;
+                            },
+                            Char('j') | Down => { self.next_tab(); },
+                            Char('k') | Up => { self.prev_tab(); },
+                            Char('f')  => match self.current {
+                                CurrentView::Library => self.search_library(),
+                                CurrentView::File(_) => self.find_on_page(),
+                                _ => {},
+                            },
+                            _ => {}
+                        }
+
+
+                    } else if ev.modifiers.contains(KeyModifiers::SHIFT) {
+                        match ev.code {
+                            Char('j') | Down => { self.next_tab(); },
+                            Char('k') | Down => { self.prev_tab(); },
+                            _ => {}
+
+                        }
+                    }
                 },
                 Msg::Tick => self.tick(),
                 Msg::Quit => break,
@@ -205,6 +229,14 @@ impl<'a> App<'a> {
         chunks
     }
 
+    pub fn library(&mut self) -> () {
+        self.current = CurrentView::Library;
+    }
+
+    pub fn settings(&mut self) -> () {
+        self.current = CurrentView::Settings;
+    }
+
     pub fn next_tab(&mut self) -> CurrentView {
         let curr = match self.current {
             CurrentView::File(idx) => {
@@ -268,6 +300,20 @@ impl<'a> App<'a> {
     }
 
     pub fn char(&mut self, ch: char) -> () {}
+
+    pub fn search_library(&self) {}
+
+    pub fn find_on_page(&self) {}
+
+    pub fn quit(mut term: Terminal<CrosstermBackend<Stdout>>) -> Result<(), crate::error::EError> {
+        terminal::disable_raw_mode()?;
+        execute!(
+            term.backend_mut(),
+            LeaveAlternateScreen,
+        )?;
+        term.show_cursor()?;
+        Ok(())
+    }
 }
 
 pub enum Msg {
