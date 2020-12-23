@@ -35,6 +35,7 @@ pub enum CurrentView {
     File(u8),
     Settings,
     Browse,
+    None,
 }
 
 impl<'a> App<'a> {
@@ -96,27 +97,41 @@ impl<'a> App<'a> {
             term.draw(|f| { self.draw(f).unwrap(); } )?;
             use Directions::*;
             match rx.recv().unwrap() {
-                Msg::Key(ev) => match ev.code {
-                    KeyCode::Char('q') => {
-                        terminal::disable_raw_mode()?;
-                        execute!(
-                            term.backend_mut(),
-                            LeaveAlternateScreen,
-                        )?;
-                        term.show_cursor()?;
-                        break;
-                    },
-                    KeyCode::Char('j') | KeyCode::Down => self.move_to(Directions::Down),
-                    KeyCode::Char('k') | KeyCode::Up  => self.move_to(Up),
-                    KeyCode::Char('h') | KeyCode::Left  => self.move_to(Left),
-                    KeyCode::Char('l') | KeyCode::Right  => self.move_to(Right),
-                    KeyCode::Char(c) => self.char(c),
-                    _ => {}
-                }
+                Msg::Key(ev) => {
+                    use KeyCode::*;
+                    match ev.code {
+                        Char('q') => {
+                            terminal::disable_raw_mode()?;
+                            execute!(
+                                term.backend_mut(),
+                                LeaveAlternateScreen,
+                            )?;
+                            term.show_cursor()?;
+                            break;
+                        },
+                        Char('j') | Down => {
+                            self.move_to(Directions::Down);
+                        },
+                        Char('k') | Up  => {
+                            self.move_to(Directions::Up);
+                        },
+                        Char('h') | Left  => {
+                            self.move_to(Directions::Left);
+                        },
+                        Char('l') | Right  => {
+                            self.move_to(Directions::Right);
+                        },
+                        Char('n') | PageDown  => {self.next_tab();}
+                        Char('p') | PageUp  => {self.prev_tab();}
+                        Char(c) => {self.char(c);  },
+                        _ => {}
+                    };
+                },
                 Msg::Tick => self.tick(),
                 Msg::Quit => break,
                 _ => break,
             }
+
         }
         Ok(())
     }
@@ -135,7 +150,7 @@ impl<'a> App<'a> {
                 .style(Style::default().bg(Color::Black).fg(Color::White))
                 .title(Span::styled(title, Style::default().add_modifier(Modifier::BOLD)))
         };
-        let content = match self.current {
+        match self.current {
             CurrentView::File(idx) => {
                 let path: &Path = self.open[idx as usize].as_path();
                 let file = fs::read_to_string(path)?;
@@ -169,6 +184,7 @@ impl<'a> App<'a> {
             },
             CurrentView::Settings => {},
             CurrentView::Browse => {}
+            CurrentView::None => { return Ok(()) }
         };
         let status = Block::default().borders(Borders::ALL);
         f.render_widget(status, chunks[2]);
@@ -187,6 +203,60 @@ impl<'a> App<'a> {
             ])
             .split(area);
         chunks
+    }
+
+    pub fn next_tab(&mut self) -> CurrentView {
+        let curr = match self.current {
+            CurrentView::File(idx) => {
+                if idx == self.open.len() as u8 {
+                    self.current = CurrentView::Library;
+                    return CurrentView::Library;
+                } else  {
+                    self.current = CurrentView::File(idx+1);
+                    return CurrentView::File(idx+1);
+                }
+            },
+            CurrentView::Browse => {
+                self.current = CurrentView::Library;
+                return CurrentView::Library;
+            }
+            CurrentView::Library => {
+                self.current = CurrentView::File(0);
+                return CurrentView::File(0);
+            }
+            CurrentView::Settings => {
+                self.current = CurrentView::Library;
+                return CurrentView::Library;
+            }
+            _ => { self.current = CurrentView::Library; return CurrentView::Library; }
+        };
+    }
+
+    pub fn prev_tab(&mut self) -> CurrentView {
+        let curr = match self.current {
+            CurrentView::File(idx) => {
+                if idx == 0 as u8 {
+                    self.current = CurrentView::Library;
+                    return CurrentView::Library;
+                } else  {
+                    self.current = CurrentView::File(idx-1);
+                    return CurrentView::File(idx-1);
+                }
+            },
+            CurrentView::Browse => {
+                self.current = CurrentView::File(self.open.len() as u8);
+                return CurrentView::File(self.open.len() as u8);
+            }
+            CurrentView::Library => {
+                self.current = CurrentView::Browse;
+                return CurrentView::Browse;
+            }
+            CurrentView::Settings => {
+                self.current = CurrentView::Library;
+                return CurrentView::Library;
+            }
+            _ => { self.current = CurrentView::Library; return CurrentView::Library; }
+        };
     }
 
     pub fn move_to(&mut self, dir: Directions) -> () {
